@@ -1,0 +1,9 @@
+{
+    "features": "dense SIFT",
+    "distance": "LDA",
+    "statistics": "ImageNet",
+    "detector_size": "5x5",
+    "f": "1 / (1 + exp(-(a*x + b)))",
+    "a": 0.04409548412118236,
+    "b": -1.8149531487012993
+}
