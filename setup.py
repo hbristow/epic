@@ -1,5 +1,4 @@
 from setuptools import setup, Extension
-from Cython.Build import cythonize
 import numpy
 
 # ----------------------------------------------------------------------------
@@ -17,7 +16,7 @@ setup(name = 'EPiC',
     packages = ['epic'],
     package_data = {
         'epic': ['statistics_sift_imagenet.npz']
-    }
+    },
     install_requires = [
         'numpy >= 1.9',
         'pillow',

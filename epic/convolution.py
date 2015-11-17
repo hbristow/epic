@@ -5,9 +5,38 @@ from numpy.lib.stride_tricks import as_strided
 try:
     # FFTW3 Wrapper
     import pyfftw.interfaces.numpy_fft as fft
-except NameError:
+except ImportError:
     # Numpy FFT
     import numpy.fft as fft
+
+
+# ----------------------------------------------------------------------------
+# Windows
+# ----------------------------------------------------------------------------
+def windows(x, shape):
+    """Return all valid windows in a MxNx... signal with spatial shape
+
+    This simply restrides the array so that no copies are performed.
+
+    Args:
+        x: An ndarray with at least two dimensions MxN. Other trailing dimensions
+            are assumed to be channels
+        shape: The PxQ spatial shape of the windows to retrive
+
+    Returns:
+        An array with shape (M-P+1,N-Q+1,P,Q,...)
+    """
+    # compute the input and filter shape
+    Mx,Nx = x.shape[:2]
+    Mg,Ng = shape[:2]
+    K,B   = np.prod(x.shape[2:]), x.itemsize
+
+    # compute the output shape and strides
+    shape = (Mx-Mg+1,Nx-Ng+1,Mg,Ng)+x.shape[2:]
+    strides = (Nx*K*B,K*B,Nx*K*B,K*B)+x.strides[2:]
+
+    # restride the array
+    return as_strided(x, shape=shape, strides=strides)
 
 
 # ----------------------------------------------------------------------------
@@ -46,13 +75,13 @@ def gemm(g, x, mean, covinv, padding=None):
         g = np.pad(g, ((Mh,Mh), (Nh,Nh), (0,0)), mode=padding)
 
     # get the image sizes
-    (Mx,Nx),Bx = x.shape[:2], x.dtype.itemsize
-    (Mg,Ng),Bg = g.shape[:2], g.dtype.itemsize
+    Mx, Nx = x.shape[:2]
+    Mg, Ng = g.shape[:2]
 
     # stride the input arrays into the matrix of patches
     mean = mean.reshape(1,1,K)
-    xs = as_strided(x-mean, shape=(Mx-Mw+1,Nx-Nw+1,Mw,Nw,K), strides=(Nx*K*Bx,K*Bx,Nx*K*Bx,K*Bx,Bx))
-    gs = as_strided(g-mean, shape=(Mg-Mw+1,Ng-Nw+1,Mw,Nw,K), strides=(Ng*K*Bg,K*Bg,Ng*K*Bg,K*Bg,Bg))
+    xs = windows(x-mean, (Mw, Nw))
+    gs = windows(g-mean, (Mw, Nw))
 
     # reshape them into multiplible matrices (forces a copy)
     gs = gs.reshape(-1,Mw*Nw*K)
@@ -75,22 +104,22 @@ def construct_fft_lut(repeat=5, base=1000, N=1024):
     """Construct a LUT of the optimal transform sizes for this architecture
 
     Rather than rely on heuristics, this function brute-force searches all
-    FFT sizes up to 1024 and records the minimum time sizes. If this file
-    is writeable, it also overwrites the ``optimal_fft_size`` function with
-    the lookup table.
+    FFT sizes up to 1024 and records the minimum time sizes.
 
     THE LOOKUP TABLE CAN TAKE A LONG TIME TO CONSTRUCT!
+
+    Keyword Args:
+        repeat: The number of repeats to average
+        base: The base number of runs to perform (modified by the actual dft size)
+        N: The maximum DFT size to consider
 
     Returns:
         lut: The lookup table of optimal transform sizes for 0 < x < N+1
     """
-    import re
-    import sys
-    import inspect
     import timeit
 
     time, argmin = [], [N]
-    setup = 'from epic.convolution import fft; import numpy; x = numpy.random.standard_normal(({n},));'
+    setup = 'from epic.convolution import fft; import numpy; x = numpy.random.standard_normal({n});'
     for n in range(N,1,-1):
         # compute the time over multiple runs
         number = int(base/(np.log2(n)))
@@ -103,17 +132,6 @@ def construct_fft_lut(repeat=5, base=1000, N=1024):
     for n in range(N-1):
         if time[n] < time[N-argmin[0]]:
             argmin.insert(0,N-n)
-
-    # replace the optimal_fft_size function
-    try:
-        module = inspect.getsource(sys.modules[__name__])
-        oldlut = inspect.getsource(optimal_fft_size)
-        newlut = 'lut = {}'.format(str(argmin))
-        newlut = re.sub(r'lut = \[[^\]]*\]', newlut, oldlut)
-        with open(__file__, 'w') as f:
-            f.write(module.replace(oldlut, newlut))
-    except:
-        pass
 
     # return the LUT
     return argmin

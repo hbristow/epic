@@ -1,7 +1,7 @@
 from __future__ import division
 import os
 import numpy as np
-from scipy.ndimage import imread
+from scipy.ndimage import imread, zoom
 from scipy.ndimage.interpolation import map_coordinates
 
 
@@ -27,6 +27,15 @@ def stretchgrid(I1, I2, integer_coordinates=False):
         return np.round(x).astype(int), np.round(y).astype(int)
     else:
         return x,y
+
+def resize_flow(I1, I2, fx, fy):
+    """Resize flow and scale the resultant vectors"""
+    old_shape = fx.shape
+    new_shape = I1.shape[:2]
+    new_scale = I2.shape[:2]
+    dy,dx = np.array(new_shape) / np.array(old_shape)
+    sy,sx = np.array(new_scale) / np.array(old_shape)
+    return zoom(dx*(fx), (dy,dx)), zoom(dy*(fy), (dy,dx))
 
 def flow_to_correspondence(I1,I2,fx,fy):
     """Convert flow fields to correspondence fields"""

@@ -4,10 +4,9 @@ import siftflow
 import numpy as np
 from scipy.misc import imread, imresize
 
-from epic import _epic
 from epic import admm, convolution, decorator, fidelity, lda, regularizers, vis
 
-modulepath = os.path.dirname(__file__)
+modulepath = os.path.dirname(os.path.realpath(__file__))
 
 
 # ----------------------------------------------------------------------------
@@ -67,10 +66,15 @@ class EPICSolver(object):
             detector_factorized=False,
             detector_size=(5,5),
             # probability transform
+            # Hand-tuned
             #logistic_prior=-2.5,
             #logistic_sigma=0.06,
+            # Imagenet 1000
             logistic_prior=-1.815,
             logistic_sigma=0.044,
+            # Imagenet 50000
+            #logistic_prior=-1.503866,
+            #logistic_sigma=0.00741,
             # solver
             fidelity=fidelity.DiscreteMax,
             regularizer=regularizers.Affine,

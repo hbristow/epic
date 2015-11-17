@@ -77,16 +77,6 @@ def rescale(x, min=0.0, max=1.0):
     return range*xnorm + min
 
 
-def resizeflow(I1, I2, fx, fy):
-    """Resize flow and scale the resultant vectors"""
-    old_shape = fx.shape
-    new_shape = I1.shape[:2]
-    new_scale = I2.shape[:2]
-    dy,dx = np.array(new_shape) / np.array(old_shape)
-    sy,sx = np.array(new_scale) / np.array(old_shape)
-    return zoom(dx*(fx), (dy,dx)), zoom(dy*(fy), (dy,dx))
-
-
 # ----------------------------------------------------------------------------
 # Image and Flow Manipulation
 # ----------------------------------------------------------------------------
@@ -132,7 +122,7 @@ def colorflow(fx, fy, rgba=False, zero_mean=True):
     return rgb
 
 
-def compose(image, overlay, opacity=0.7, alpha=None):
+def compose(image, overlay, opacity=0.7, alpha=None, rescale_inputs=True):
     """Compose an image with an overlay
 
     Args:
@@ -142,12 +132,16 @@ def compose(image, overlay, opacity=0.7, alpha=None):
     Keyword Args:
         opacity: The mixing opacity of the overlay (default: 0.7)
         alpha: The alpha mask [0.0 1.0] for the overlay (default: None)
+        rescale: rescale the inputs into the range [0.0 1.0] (default: False)
     """
 
     # rescale the inputs so they can be merged without overflow
     M,N = image.shape[:2]
-    image = rescale(image).reshape(M,N,-1)
-    overlay = rescale(overlay).reshape(M,N,-1)
+    image = image.reshape(M,N,-1)
+    overlay = overlay.reshape(M,N,-1)
+    if rescale_inputs:
+        image = rescale(image)
+        overlay = rescale(overlay)
 
     # compute the global alpha channel
     alpha = np.ones((M,N)) if alpha is None else alpha
@@ -161,7 +155,7 @@ def compose(image, overlay, opacity=0.7, alpha=None):
     return (1.0-opacity*alpha[...,None])*rgbi + (opacity*alpha[...,None])*rgbo
 
 
-def compose_pde(image, pde, opacity=0.7, colormap=plt.get_cmap('jet')):
+def compose_pde(image, pde, opacity=0.7, colormap=cm.jet, rescale_pde=True):
     """Compose an image with a single channel PDE
 
     Args:
@@ -172,10 +166,12 @@ def compose_pde(image, pde, opacity=0.7, colormap=plt.get_cmap('jet')):
         opacity: Maximum opacity of the PDE (default: 0.7)
         colormap: The colormap instance used to color the PDE (default: jet)
     """
-    pde = rescale(pde)
+    if rescale_pde:
+        pde = rescale(pde)
+    image = rescale(image)
     alpha = rescale(pde, 0.2)
     pde = colormap(pde)[...,:3]
-    return compose(image, pde, opacity, alpha)
+    return compose(image, pde, opacity, alpha, rescale_inputs=False)
 
 
 def compose_flow(image, fx, fy, opacity=1.0, zero_mean=True):
@@ -233,12 +229,17 @@ def synthesize_image(I1, I2, fx, fy, forwards=False, alpha=None):
 # ----------------------------------------------------------------------------
 # Basic Visualization
 # ----------------------------------------------------------------------------
-def display(image):
+def display(*images, **kwargs):
     """Display an image"""
-    image = rescale(image)
-    fig, ax = plt.subplots()
-    ax.imshow(image)
-    ax.set_axis_off()
+    N = len(images)
+    subplots = kwargs.pop('subplots', (1,N))
+    fig,axes = plt.subplots(*subplots)
+    axes = axes if isinstance(axes, list) else [axes]
+    for image, axis in zip(images, axes):
+        axis.imshow(image, **kwargs)
+        axis.get_xaxis().set_visible(False)
+        axis.get_yaxis().set_visible(False)
+        #axis.set_axis_off()
     fig.show()
     return fig
 
@@ -248,7 +249,7 @@ def display(image):
 # ----------------------------------------------------------------------------
 class CorresponderBase(object):
 
-    def __init__(self, I1, I2, subplots=(1,2), interactive=True):
+    def __init__(self, I1, I2, fig=None, subplots=(1,2), colormap=cm.jet, interactive=True):
         """Base class for visualizing correspondences
 
         Args:
@@ -257,7 +258,8 @@ class CorresponderBase(object):
         """
 
         # initialize the figure
-        self.fig  = plt.figure(figsize=(16,6))
+        self.fig  = fig if fig else plt.figure(figsize=(16,6))
+        self.fig.clear()
         self.axes = []
         gs = gridspec.GridSpec(*subplots)
 
@@ -273,7 +275,7 @@ class CorresponderBase(object):
         plt.subplots_adjust(wspace=0.05)
 
         # create the colormap
-        self.cmap = cycle([cm.jet(i) for i in reversed(range(0,cm.jet.N,16))])
+        self.cmap = cycle([colormap(i) for i in reversed(range(0,colormap.N,16))])
         self.color = self.cmap.next()
 
         # bind the events
@@ -334,7 +336,8 @@ class CorresponderBase(object):
             gx2,gy2 = inv.transform(self.ax2.transData.transform(xy_right))
             line = lines.Line2D((gx1,gx2), (gy1,gy2),
                 transform=self.fig.transFigure,
-                color=(0.85,0.85,0.85,0.3))
+                color=(0.85,0.85,0.85,0.3),
+                linewidth=1.0)
             self.fig.lines.append(line)
 
         # plot the input and output points
@@ -354,7 +357,7 @@ class CorresponderBase(object):
 # Manual Corresponder
 # ----------------------------------------------------------------------------
 class Labeller(CorresponderBase):
-    def __init__(self, I1, I2, correspondences=None):
+    def __init__(self, I1, I2, correspondences=None, **kwargs):
         """A visualizer for labelling image pairs
 
         The labelled correspondences are stored in the correspondences attribute
@@ -369,7 +372,7 @@ class Labeller(CorresponderBase):
                 labelling session. This allows one to either view the labels,
                 or continue labelling
         """
-        super(Labeller, self).__init__(I1, I2)
+        super(Labeller, self).__init__(I1, I2, **kwargs)
         self.correspondences = []
         if correspondences is not None:
             for left,right in correspondences:
@@ -400,7 +403,7 @@ class Labeller(CorresponderBase):
 
 
 class PNLabeller(CorresponderBase):
-    def __init__(self, I1, I2, positive=None, negative=None):
+    def __init__(self, I1, I2, positive=None, negative=None, **kwargs):
         """A visualizer for labelling positive and negative regions
 
         Args:
@@ -410,7 +413,7 @@ class PNLabeller(CorresponderBase):
             positive: The initial set of positive correspondences
             negative: The initial set of background examples
         """
-        super(PNLabeller, self).__init__(I1, I2)
+        super(PNLabeller, self).__init__(I1, I2, **kwargs)
         self.positive = []
         self.negative = []
         self.mode = 'P'
@@ -506,13 +509,13 @@ def euclidean(I1,I2,x,y):
 
 class PDEVisualizer(CorresponderBase):
     def __init__(self, I1, I2, F1=None, F2=None, transform=None,
-            loss_function=manhattan, loss_functions=None):
+            loss_function=manhattan, loss_functions=None, colormap=cm.jet):
         """A visualizer for displaying the full PDE for a point
 
         Args:
             I1,I2: The images
             loss_function: The function to compute the PDE. Takes three
-                arguments, loss_function(I1, I2, (x,y)) where (x,y)
+                arguments, loss_function(I1, I2, x, y) where (x,y)
                 is the point in the first image where the kernel should be
                 extracted
 
@@ -531,6 +534,7 @@ class PDEVisualizer(CorresponderBase):
         self.F1 = transform(I1) if F1 is None else F1
         self.F2 = transform(I2) if F2 is None else F2
         self.ds = I1.shape[0]/self.F1.shape[0], I1.shape[1]/self.F1.shape[1]
+        self.colormap = colormap
 
     def onleftclick(self, event):
         # get the click location
@@ -542,7 +546,7 @@ class PDEVisualizer(CorresponderBase):
         for loss,axis in zip(self.loss, self.axes[1:]):
             pde = loss(self.F1, self.F2, xd, yd)
             pde = imresize(pde, self.I2.shape[:2])
-            im_pde = compose_pde(self.I2, pde)
+            im_pde = compose_pde(self.I2, pde, rescale_pde=False, colormap=self.colormap)
             self.clearlast()
             axis.imshow(im_pde)
         self.plot((x,y))
@@ -552,6 +556,8 @@ class PDEVisualizer(CorresponderBase):
 # Graph Visualization
 # ----------------------------------------------------------------------------
 class GraphVisualizer(object):
+    """Docstring for Graph"""
+
     def __init__(self, G, pos=None, draw_images=False, threshold=1e-4):
 
         # import networkx

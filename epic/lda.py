@@ -44,13 +44,15 @@ def save(filename, mean, cov):
 # ----------------------------------------------------------------------------
 # Training
 # ----------------------------------------------------------------------------
-def collect(images, channels=None, bandwidth=None, transform=lambda x:x):
+def collect(images, channels=None, bandwidth=0, transform=lambda x:x):
     """Collect statistics over a set of images
 
     Args:
         images: A list of image files or images to collect statistics over
         channels: The number of channels in the multi-channel images
         bandwidth: The bandwidth of the statistics to collect
+            By default, the bandwidth is zero, meaning only cross-channel
+            correlations are computed
 
     Keyword Args:
         transform: A feature transform to apply to the image before
@@ -72,33 +74,29 @@ def collect(images, channels=None, bandwidth=None, transform=lambda x:x):
     # iterate over each image
     start = time.time()
     for f,image in enumerate(images):
+        try:
+            # load the image and transform it into feature space
+            image = transform(imagify(image))
+            M,N = image.shape[:2]
+            if M <= B or N <= B:
+                continue
 
-        # load the image and transform it into feature space
-        image = transform(imagify(image))
-        M,N = image.shape[:2]
-        if M <= B or N <= B:
-            continue
+            # compute the covariant statistics
+            if bandwidth:
+                dn,dm = np.meshgrid(np.arange(-B,B+1), np.arange(-B,B+1))
+                displacements[dm,dn,0,0] += (N-np.abs(dn))*(M-np.abs(dm))
+                _update_stationary(image, dm, dn, B, cov)
+            else:
+                displacements[0,0,0,0] += M*N
+                _update_nonstationary(image, cov)
 
-        # compute the displacements
-        dn,dm = np.meshgrid(np.arange(-B,B+1), np.arange(-B,B+1))
+            # accumulate the mean count
+            mean += image.sum(axis=(0,1))
+            pixels += M*N
 
-        # accumulate the mean and displacement count
-        mean += image.sum(axis=(0,1))
-        pixels += M*N
-        displacements[dm,dn,0,0] += (N-np.abs(dn))*(M-np.abs(dm))
-
-        # compute the statistics in the Fourier domain
-        If = fft.rfft2(image.transpose(2,0,1), (M+B,N+B))
-        Ic = If.conj()
-        for k1 in range(K):
-            for k2 in range(k1,K):
-
-                #  cross correlate
-                corr = fft.irfft2(Ic[k1]*If[k2], (M+B,N+B))
-                # accumulate
-                cov[dm,dn,k1,k2] += corr[dm,dn]
-                if k1 != k2:
-                    cov[-dm,-dn,k2,k1] += corr[dm,dn]
+        except:
+            # ignore all errors
+            pass
 
         # display progress
         elapsed = time.time() - start
@@ -111,6 +109,25 @@ def collect(images, channels=None, bandwidth=None, transform=lambda x:x):
     mean = mean/pixels
     cov  = cov/displacements - np.outer(mean, mean) # expectation property
     return mean, cov
+
+def _update_stationary(image, dm, dn, B, cov):
+    """Accumulate the stationary image statistics"""
+    M,N,K = image.shape
+    If = fft.rfft2(image.transpose(2,0,1), (M+B,N+B))
+    Ic = If.conj()
+    for k1 in range(K):
+        for k2 in range(k1,K):
+
+            #  cross correlate
+            corr = fft.irfft2(Ic[k1]*If[k2], (M+B,N+B))
+            # accumulate
+            cov[dm,dn,k1,k2] += corr[dm,dn]
+            if k1 != k2:
+                cov[-dm,-dn,k2,k1] += corr[dm,dn]
+
+def _update_nonstationary(image, cov):
+    """Accumulate the non-stationary (cross-channel) image statistics"""
+    cov += np.einsum('mnp,mnq->pq', image, image)
 
 def optimal_fft_size(*shape):
     """Compute the optimal FFT size for a given shape using a LUT heuristic"""
@@ -194,7 +211,7 @@ def inverse(cov, eps=None, factorized=False):
     """
 
     # compute the minimum eps to make cov positive-definite
-    if not eps:
+    if eps is None:
         eps = minimum_lambda(cov)
 
     # augment the diagonal
