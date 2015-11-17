@@ -23,32 +23,6 @@ def savefig(figure, filename):
 
 
 # ----------------------------------------------------------------------------
-# Keypoint Estimation
-# ----------------------------------------------------------------------------
-def edges(I):
-    I = grayscale(I)
-    M,N = I.shape
-    w = gaussian(M, M/np.pi).reshape(M,1) * gaussian(N, N/np.pi)
-    gy, gx = np.gradient(I)
-    return w*(gx**2 + gy**2)
-
-
-def keypoints(I, number=50):
-    I = grayscale(I)
-    M,N = I.shape
-    w = gaussian(M, M/np.pi).reshape(M,1) * gaussian(N, N/np.pi)
-    gy, gx = np.gradient(I)
-    edges  = w*(gx**2 + gy**2)
-    maxima = maximum_filter(edges, min(M,N)/20)
-    m, n  = (edges == maxima).nonzero()
-    edges = edges[m,n]
-    edges,m,n = zip(*sorted(zip(edges,m,n), reverse=True, key=lambda x:x[0]))
-    m,n = m[:number], n[:number]
-    n,m = zip(*sorted(zip(n,m)))
-    return m,n
-
-
-# ----------------------------------------------------------------------------
 # Geometric Changes
 # ----------------------------------------------------------------------------
 def stretchgrid(I1, I2):
