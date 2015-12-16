@@ -3,6 +3,10 @@ EPIC
 
 Dense Semantic Correspondence where Every Pixel is a Classifier
 
+    Hilton Bristow, Jack Valmadre and Simon Lucey,
+    "Dense Semantic Correspondence where Every Pixel is a Classifier",
+    International Conference on Computer Vision (ICCV), 2015
+
 EPiC solves the dense semantic correspondence problem by constructing an LDA
 classifier around every pixel in the source image, and convolving it with
 every point in the target image to produce a probability likelihood estimate.
