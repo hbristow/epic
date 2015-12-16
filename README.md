@@ -22,3 +22,11 @@ Using `pip`, the repository can be cloned and built automatically:
     pip install git+https://github.com/hbristow/epic
 
 The requirements are pure-Python, and will be retrieved automatically
+
+
+NOTES
+-----
+
+The initial public release of this research only contains code to build and
+apply detectors on image pairs. It does not contain functionality to perform
+regularization. We are working to provide wrappers to SIFT Flow.
